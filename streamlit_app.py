@@ -18,7 +18,7 @@ def load_config():
         try:
             return json.loads(CONFIG_PATH.read_text())
         except json.JSONDecodeError:
-            st.warning('⚠️ config.json is invalid; using defaults.')
+            st.warning('⚠️ config.json is invalid; using defaults!')
     return default
 
 def save_config(cfg: dict):
