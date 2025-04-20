@@ -3,6 +3,7 @@ import pandas as pd
 import json
 from io import BytesIO
 from pathlib import Path
+from io import BytesIO
 
 # ---------- Configuration ----------
 CONFIG_PATH = Path('config.json')
@@ -54,7 +55,7 @@ def filter_emails(df: pd.DataFrame, blacklist: list) -> pd.DataFrame:
 def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool, rename_column: bool,
                  remove_duplicates: bool, detect_country_step: bool,
                  filter_emails_step: bool, reset_index_step: bool) -> pd.DataFrame:
-    df = pd.read_excel(file_bytes)
+    df = pd.read_excel(BytesIO(file_bytes), engine='openpyxl')
     
     # Remove columns that are completely empty
     if remove_empty_cols:
