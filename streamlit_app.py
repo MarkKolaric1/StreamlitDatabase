@@ -3,7 +3,9 @@ import pandas as pd
 import json
 from io import BytesIO
 from pathlib import Path
-from io import BytesIO
+
+# Set page configuration (must be the first Streamlit command)
+st.set_page_config(page_title="📊 Excel Phone & Email Processor", layout="wide")
 
 # ---------- Configuration ----------
 CONFIG_PATH = Path('config.json')
@@ -11,7 +13,6 @@ CONFIG_PATH = Path('config.json')
 @st.cache_data(show_spinner=False)
 def load_config():
     default = {
-        'email_whitelist': ['info', 'contact', 'support'],
         'email_blacklist': ['pr', 'hr', 'press'],
         'phone_prefix_map': {'+1': 'United States/Canada', '+44': 'United Kingdom'}
     }
@@ -156,7 +157,6 @@ translations = {
 t = translations[language]
 
 # Update UI with translations
-#st.set_page_config(page_title=t['title'], layout='wide')
 st.title(t['title'])
 
 # Load configuration
