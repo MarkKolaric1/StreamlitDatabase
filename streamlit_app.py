@@ -51,6 +51,52 @@ def filter_emails(df: pd.DataFrame, blacklist: list) -> pd.DataFrame:
         df = df[~bad]  # Remove rows where any blacklist word is found
     return df
 
+# Industry mapping
+industry_mapping = {
+    'Oil refinery': 'Oil & Gas',
+    'Oil & natural gas company': 'Oil & Gas',
+    'Oil field equipment supplier': 'Oil & Gas',
+    'Oil wholesaler': 'Oil & Gas',
+    'Diesel fuel supplier': 'Oil & Gas',
+    'Oil store': 'Oil & Gas',
+    'Oilfield': 'Oil & Gas',
+    'Solar energy company': 'Solar Energy',
+    'Solar energy system service': 'Solar Energy',
+    'Solar energy equipment supplier': 'Solar Energy',
+    'Solar hot water system supplier': 'Solar Energy',
+    'Chemical manufacturer': 'Chemicals',
+    'Industrial chemicals wholesaler': 'Chemicals',
+    'Industrial equipment supplier': 'Industrial Equipment',
+    'Equipment rental agency': 'Industrial Equipment',
+    'Distribution service': 'Distribution & Logistics',
+    'Manufacturer': 'Manufacturing & Repair',
+    'Shipyard': 'Manufacturing & Repair',
+    'Shipbuilding and repair company': 'Manufacturing & Repair',
+    'Electric utility company': 'Utilities & Power',
+    'Power station': 'Utilities & Power',
+    'Telecommunications equipment supplier': 'Telecommunications',
+    'Telecommunications service provider': 'Telecommunications',
+    'Telecommunications contractor': 'Telecommunications',
+    'Cable company': 'Telecommunications',
+    'Electrical products wholesaler': 'Electrical & Electronics',
+    'Electrical equipment supplier': 'Electrical & Electronics',
+    'Electrical engineer': 'Electrical & Electronics',
+    'Security system supplier': 'Security Systems',
+    'Corporate office': 'Business Services',
+    'Business center': 'Business Services',
+    'Auto tune up service': 'Automotive Services',
+    'Energy equipment and solutions': 'Energy Services'
+}
+
+# Function to categorize industries
+def categorize_industry(df: pd.DataFrame) -> pd.DataFrame:
+    if len(df.columns) >= 14:  # Assuming the industry column is at index 13
+        industry_column = df.iloc[:, 13]
+        df['Industry Category'] = industry_column.map(industry_mapping).fillna('Other')
+    else:
+        st.warning('⚠️ Industry column not found or insufficient columns in the dataset.')
+    return df
+
 # Updated process_file function with toggles
 @st.cache_data(show_spinner=False)
 def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool, rename_column: bool,
@@ -86,6 +132,9 @@ def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool, rename_c
     if filter_emails_step:
         df = filter_emails(df, cfg['email_blacklist'])
     
+    # Categorize industries
+    df = categorize_industry(df)
+
     # Reset the index to ensure IDs are in correct order
     if reset_index_step:
         df.reset_index(drop=True, inplace=True)
@@ -117,6 +166,7 @@ translations = {
         'upload_header': '📥 Upload & Process Excel',
         'file_uploader': 'Select an .xlsx file',
         'show_filters': '🔧 Show Filters',
+        'consolidate_rows': '🛠 Consolidate Rows by Company',  # Added translation for the toggle
         'filter_preview': '🔍 Filter Preview and Processed File',
         'num_rows': 'Number of rows to display (1-5000)',
         'filter_country': 'Filter by Country',
@@ -142,6 +192,7 @@ translations = {
         'upload_header': '📥 Загрузить и обработать Excel',
         'file_uploader': 'Выберите файл .xlsx',
         'show_filters': '🔧 Показать фильтры',
+        'consolidate_rows': '🛠 Объединить строки по компании',  # Added translation for the toggle
         'filter_preview': '🔍 Предварительный просмотр и обработанный файл',
         'num_rows': 'Количество строк для отображения (1-5000)',
         'filter_country': 'Фильтр по стране',
@@ -204,6 +255,49 @@ if uploaded:
     # Filtering Section
     st.write('---')
     show_filters = st.toggle(t['show_filters'], value=True)  # Toggle for showing filters
+    consolidate_rows = st.toggle("🛠 Consolidate Rows by Company", value=False)  # New toggle
+
+    if consolidate_rows:
+        # Consolidate rows by company
+        if 'Email' in result_df.columns or 'Column_3' in result_df.columns:
+            # Extract company identifiers
+            def extract_email_domain(email):
+                if pd.notna(email) and '@' in email:
+                    return email.split('@')[-1].lower()
+                return None
+
+            def normalize_url(url):
+                if pd.notna(url):
+                    # Remove paths and normalize the URL
+                    return url.split('/')[2].lower() if '//' in url else url.lower()
+                return None
+
+            # Create a new column for company grouping
+            result_df['Company Identifier'] = result_df['Email'].apply(extract_email_domain)
+            if 'Column_3' in result_df.columns:
+                result_df['Company Identifier'].fillna(result_df['Column_3'].apply(normalize_url), inplace=True)
+
+            # Group by the company identifier
+            company_group = result_df.groupby('Company Identifier', as_index=False)
+
+            def consolidate_column(series):
+                unique_values = series.dropna().unique()
+                return '; '.join(unique_values)
+
+            # Consolidate emails, phone numbers, and links
+            if 'Email' in result_df.columns:
+                result_df['Email'] = company_group['Email'].transform(consolidate_column)
+            if 'Phone number' in result_df.columns:
+                result_df['Phone number'] = company_group['Phone number'].transform(consolidate_column)
+            if 'Column_3' in result_df.columns:
+                result_df['Column_3'] = company_group['Column_3'].transform(consolidate_column)
+
+            # Drop duplicate rows after consolidation
+            result_df = result_df.drop_duplicates(subset=['Company Identifier'])
+
+            # Drop the temporary 'Company Identifier' column
+            result_df.drop(columns=['Company Identifier'], inplace=True)
+
     if show_filters:
         st.header(t['filter_preview'])
 
@@ -215,17 +309,17 @@ if uploaded:
             available_countries = result_df['Country'].dropna().unique().tolist()
             selected_countries = st.multiselect(t['filter_country'], available_countries)
 
-        # Filter: Business sphere/industry (Column 12)
-        if len(result_df.columns) >= 14:
-            available_spheres = result_df.iloc[:, 13].dropna().unique().tolist()
-            selected_spheres = st.multiselect(t['filter_sphere'], available_spheres)
+        # Filter: Business sphere/industry using the "Industry Category" column
+        if 'Industry Category' in result_df.columns:
+            available_categories = result_df['Industry Category'].dropna().unique().tolist()
+            selected_categories = st.multiselect(t['filter_sphere'], available_categories)
 
         # Apply filters
         filtered_df = result_df.copy()
         if 'Country' in filtered_df.columns and selected_countries:
             filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
-        if len(filtered_df.columns) >= 12 and selected_spheres:
-            filtered_df = filtered_df[filtered_df.iloc[:, 13].isin(selected_spheres)]
+        if 'Industry Category' in filtered_df.columns and selected_categories:
+            filtered_df = filtered_df[filtered_df['Industry Category'].isin(selected_categories)]
         filtered_df = filtered_df.head(max_rows)
 
     else:
@@ -254,8 +348,8 @@ if uploaded:
 
     # Count rows per business sphere/industry
     show_sphere_counts = st.toggle(t['rows_per_sphere'], value=True)
-    if show_sphere_counts and len(filtered_df.columns) >= 14:
-        sphere_counts = filtered_df.iloc[:, 13].value_counts().reset_index()
+    if show_sphere_counts and 'Industry Category' in filtered_df.columns:
+        sphere_counts = filtered_df['Industry Category'].value_counts().reset_index()
         sphere_counts.columns = ['Business Sphere/Industry', 'Count']
         st.subheader(t['rows_per_sphere'])
         st.dataframe(sphere_counts)
