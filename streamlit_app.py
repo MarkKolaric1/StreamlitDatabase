@@ -3,9 +3,11 @@ import pandas as pd
 import json
 from io import BytesIO
 from pathlib import Path
+from industry_mapping import industry_mapping
+from translations import translations
 
 # Set page configuration (must be the first Streamlit command)
-st.set_page_config(page_title="📊 Excel Phone & Email Processor", layout="wide")
+st.set_page_config(page_title="ExportZilla", layout="wide")
 
 # ---------- Configuration ----------
 CONFIG_PATH = Path('config.json')
@@ -27,145 +29,6 @@ def save_config(cfg: dict):
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
     load_config.clear()  # clear cache so new config is loaded
     return cfg
-
-# ---------- Industry Mapping ----------
-# Updated Industry Mapping with Main Categories and Subcategories
-industry_mapping = {
-    "Agriculture & Food": {
-        "Crop farm": "Crop farm",
-        "Livestock farm": "Livestock farm",
-        "Fishery": "Fishery",
-        "Agricultural machinery supplier": "Agricultural machinery supplier",
-        "Food processing company": "Food processing company",
-        "Dairy producer": "Dairy producer",
-        "Meat processing plant": "Meat processing plant",
-        "Bakery": "Bakery",
-        "Beverage company": "Beverage company",
-        "Fertilizer manufacturer": "Fertilizer manufacturer"
-    },
-    "Business Services": {
-        "Corporate office": "Corporate office",
-        "Business center": "Business center",
-        "Consulting firm": "Consulting firm",
-        "Law firm": "Law firm",
-        "Accounting firm": "Accounting firm",
-        "Marketing agency": "Marketing agency",
-        "Recruitment agency": "Recruitment agency",
-        "Non-profit organization": "Non-profit organization",
-        "Research institute": "Research institute",
-        "Bank": "Bank",
-        "Insurance company": "Insurance company",
-        "Asset management firm": "Asset management firm",
-        "Venture capital firm": "Venture capital firm",
-        "Fintech startup": "Fintech startup"
-    },
-    "Chemicals, Pharmaceuticals & Plastics": {
-        "Chemical manufacturer": "Chemical manufacturer",
-        "Industrial chemicals wholesaler": "Industrial chemicals wholesaler",
-        "Pharmaceutical company": "Pharmaceutical company",
-        "Biotechnology firm": "Biotechnology firm"
-    },
-    "Construction": {
-        "Construction contractor": "Construction contractor",
-        "Building materials supplier": "Building materials supplier",
-        "Architecture firm": "Architecture firm",
-        "Property developer": "Property developer",
-        "Real estate agency": "Real estate agency"
-    },
-    "Education, Training & Organisations": {
-        "School": "School",
-        "E-learning provider": "E-learning provider"
-    },
-    "Electrical, Electronics & Optical": {
-        "Electrical products wholesaler": "Electrical products wholesaler",
-        "Electrical equipment supplier": "Electrical equipment supplier",
-        "Electrical engineer": "Electrical engineer",
-        "Hardware manufacturer": "Hardware manufacturer",
-        "Semiconductor manufacturer": "Semiconductor manufacturer",
-        "Telecommunications equipment supplier": "Telecommunications equipment supplier",
-        "Telecommunications service provider": "Telecommunications service provider",
-        "Telecommunications contractor": "Telecommunications contractor",
-        "Cable company": "Cable company",
-        "Security system supplier": "Security system supplier"
-    },
-    "Energy, Environment": {
-        "Oil refinery": "Oil refinery",
-        "Oil & natural gas company": "Oil & natural gas company",
-        "Oil field equipment supplier": "Oil field equipment supplier",
-        "Oil wholesaler": "Oil wholesaler",
-        "Diesel fuel supplier": "Diesel fuel supplier",
-        "Oil store": "Oil store",
-        "Oilfield": "Oilfield",
-        "Solar energy company": "Solar energy company",
-        "Solar energy system service": "Solar energy system service",
-        "Solar energy equipment supplier": "Solar energy equipment supplier",
-        "Solar hot water system supplier": "Solar hot water system supplier",
-        "Electric utility company": "Electric utility company",
-        "Power station": "Power station",
-        "Energy equipment and solutions": "Energy equipment and solutions",
-        "Coal mining": "Coal mining",
-        "Coal processing": "Coal processing",
-        "Wind energy company": "Wind energy company",
-        "Hydropower plant": "Hydropower plant"
-    },
-    "IT, Internet & R&D": {
-        "Software company": "Software company",
-        "IT services provider": "IT services provider",
-        "E-commerce platform": "E-commerce platform",
-        "Cybersecurity firm": "Cybersecurity firm",
-        "AI solutions provider": "AI solutions provider"
-    },
-    "Leisure & Tourism": {
-        "TV broadcaster": "TV broadcaster",
-        "Film production company": "Film production company",
-        "Music label": "Music label",
-        "Game developer": "Game developer",
-        "Creative agency": "Creative agency"
-    },
-    "Metals, Machinery & Engineering": {
-        "Industrial equipment supplier": "Industrial equipment supplier",
-        "Equipment rental agency": "Equipment rental agency",
-        "Manufacturer": "Manufacturer",
-        "Shipyard": "Shipyard",
-        "Shipbuilding and repair company": "Shipbuilding and repair company",
-        "Metal processing": "Metal processing",
-        "Steel manufacturer": "Steel manufacturer",
-        "Car manufacturer": "Car manufacturer",
-        "Aerospace company": "Aerospace company",
-        "Defense contractor": "Defense contractor",
-        "Automation solutions provider": "Automation solutions provider"
-    },
-    "Minerals": {
-        "Mining company": "Mining company",
-        "Mineral processing": "Mineral processing"
-    },
-    "Paper, Printing & Publishing": {
-        "Paper mill": "Paper mill",
-        "Packaging company": "Packaging company",
-        "Printing service": "Printing service"
-    },
-    "Retail & Traders": {
-        "Retail chain": "Retail chain",
-        "Consumer electronics retailer": "Consumer electronics retailer",
-        "Luxury brand": "Luxury brand",
-        "Household products manufacturer": "Household products manufacturer"
-    },
-    "Textiles, Clothing, Leather, Watchmaking, Jewellery": {
-        "Textile manufacturer": "Textile manufacturer",
-        "Clothing store": "Clothing store"
-    },
-    "Transport & Logistics": {
-        "Distribution service": "Distribution service",
-        "Shipping company": "Shipping company",
-        "Airline": "Airline",
-        "Railway operator": "Railway operator",
-        "Trucking company": "Trucking company",
-        "Warehouse": "Warehouse",
-        "Courier service": "Courier service"
-    }
-}
-
-
 
 # ---------- Data Processing ----------
 
@@ -192,22 +55,108 @@ def filter_emails(df: pd.DataFrame, blacklist: list) -> pd.DataFrame:
 # Apply translations to column names
 def translate_columns(df: pd.DataFrame, t: dict) -> pd.DataFrame:
     column_mapping = {
-        'Country': t['column_country'],
+        'ID' : t['ID'],
         'Email': t['column_email'],
         'Phone number': t['column_phone'],
+        'Websites' : t['column_websites'],
+        'Address 1' :t['column_address_1'],
+        'Address 2' :t['column_address_2'],
+        'Address 3' :t['column_address_2'],
+        'Country': t['column_country'],
+        'Main Category' : t['column_main_category'],
+        'Subcategory' :t['column_subcategory'],
     }
     return df.rename(columns=column_mapping)
 
 # Translate categories and countries in the DataFrame
 def translate_values(df: pd.DataFrame, t: dict) -> pd.DataFrame:
+    # Ensure the DataFrame is not empty
+    if df.empty:
+        return df
+
+    # Translate countries
     if t['column_country'] in df.columns:
-        df[t['column_country']] = df[t['column_country']].map(t['countries']).fillna(df[t['column_country']])
+        df[t['column_country']] = df[t['column_country']].apply(
+            lambda x: t['countries'].get(str(x).strip(), x) if pd.notna(x) else x
+        )
+    
+    # Translate main categories
+    if t['column_main_category'] in df.columns:
+        df[t['column_main_category']] = df[t['column_main_category']].apply(
+            lambda x: t['categories'].get(str(x).strip(), x) if pd.notna(x) else x
+        )
+    
+    # Translate subcategories
+    if t['column_subcategory'] in df.columns:
+        df[t['column_subcategory']] = df[t['column_subcategory']].apply(
+            lambda x: t['subcategories'].get(str(x).strip(), x) if pd.notna(x) else x
+        )
+    
     return df
 
+def clean_website_column(df: pd.DataFrame, website_col: str) -> pd.DataFrame:
+    """
+    Cleans the website column by removing trailing paths and normalizing the URL.
+    Example: 'https://sirajpower.com/contact-us/' -> 'https://sirajpower.com/'
+    """
+    if website_col in df.columns:
+        def normalize_url(url):
+            if pd.notna(url) and '//' in url:
+                # Extract the base URL (protocol + domain)
+                parts = url.split('/')
+                return f"{parts[0]}//{parts[2]}/" if len(parts) > 2 else url
+            return url
+
+        # Apply normalization to the website column
+        df[website_col] = df[website_col].apply(normalize_url)
+    else:
+        st.warning(f"⚠️ Column '{website_col}' not found in the DataFrame.")
+    return df
+
+def clean_address_columns(df: pd.DataFrame, t: dict) -> pd.DataFrame:
+    """
+    If Address 1 is the same as Country, replace Address 1 with a combination of Address 2 and Address 3.
+    If Address 1 is not the same as Country, append Address 2 and Address 3 to Address 1.
+    Finally, remove Address 2 and Address 3 columns and rename Address 1 to "Address".
+    """
+    addr1 = t['column_address_1']
+    addr2 = t['column_address_2']
+    addr3 = t['column_address_3']
+    country = t['column_country']
+
+    # Debug: Print columns and a sample before cleaning
+
+
+    if all(col in df.columns for col in [addr1, addr2, addr3, country]):
+        def replace_address(row):
+            if pd.notna(row[addr1]) and pd.notna(row[country]) and str(row[addr1]).strip() == str(row[country]).strip():
+                a2 = str(row[addr2]).strip() if pd.notna(row[addr2]) else ""
+                a3 = str(row[addr3]).strip() if pd.notna(row[addr3]) else ""
+                combined = (a2 + " " + a3).strip()
+                return combined
+            else:
+                a1 = str(row[addr1]).strip() if pd.notna(row[addr1]) else ""
+                a2 = str(row[addr2]).strip() if pd.notna(row[addr2]) else ""
+                a3 = str(row[addr3]).strip() if pd.notna(row[addr3]) else ""
+                combined = (a1 + " " + a2 + " " + a3).strip()
+                return combined
+
+        # Apply the replacement logic row-wise and update the DataFrame
+        df[addr1] = df.apply(replace_address, axis=1)
+
+        # Remove Address 2 and Address 3 columns
+        df.drop(columns=[addr2, addr3], inplace=True)
+
+        # Rename Address 1 to "Address"
+        df.rename(columns={addr1: "Address"}, inplace=True)
+
+    else:
+        st.warning(f"⚠️ One or more address/country columns are missing: {addr1}, {addr2}, {addr3}, {country}")
+    return df
 # Updated process_file function with industry mapping
 @st.cache_data(show_spinner=False)
-def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool, rename_column: bool,
-                 remove_duplicates: bool, detect_country_step: bool,
+def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool,
+                 remove_duplicates: bool,
                  filter_emails_step: bool, reset_index_step: bool) -> pd.DataFrame:
     df = pd.read_excel(BytesIO(file_bytes), engine='openpyxl')
     
@@ -217,8 +166,8 @@ def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool, rename_c
     
     phone_cols = [c for c in df.columns if 'phone' in c.lower()]
     
-    # If no phone column is found, rename "Column_1" to "Phone number"
-    if rename_column and not phone_cols:
+    # Rename "Column_1" to "Phone number"
+    if not phone_cols:
         if "Column_1" in df.columns:
             df.rename(columns={"Column_1": "Phone number"}, inplace=True)
             phone_cols = ["Phone number"]
@@ -232,7 +181,7 @@ def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool, rename_c
         df.drop_duplicates(subset=[email_cols[0], phone_cols[0]], inplace=True)
 
     # Detect country based on phone prefix
-    if detect_country_step and phone_cols:
+    if phone_cols:
         df['Country'] = detect_country(df[phone_cols[0]], cfg['phone_prefix_map'])
     
     # Filter emails based on blacklist
@@ -244,7 +193,19 @@ def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool, rename_c
     if reset_index_step:
         df.reset_index(drop=True, inplace=True)
         df.index += 1  # Start IDs from 1 instead of 0
-        df.index.name = 'ID'  # Rename the index to 'ID'
+        df.index.name = t['ID'] # Rename the index to 'ID'
+    
+    
+    # Translate column names in the result DataFrame
+    print("Columns before renaming:", df.columns)
+    df = translate_columns(df, t)
+    print("Columns after renaming:", df.columns)
+    
+
+    # Translate values in the result DataFrame
+    df = translate_values(df, t)
+
+    
 
     return df
 
@@ -252,125 +213,6 @@ def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool, rename_c
 
 # Language selection
 language = st.sidebar.selectbox('🌐 Select Language', ['English', 'Русский'])
-
-# Translation dictionary
-translations = {
-    'English': {
-        'title': '📊 Excel Phone & Email Processor',
-        'config_header': '⚙️ Configuration',
-        'blacklist': 'Blacklist (comma-separated)',
-        'phone_prefix': 'Phone Prefix → Country (prefix:country per line)',
-        'save_settings': '💾 Save Settings',
-        'processing_steps': '🔧 Processing Steps',
-        'remove_empty_cols': 'Remove Empty Columns',
-        'rename_column': 'Rename "Column_1" to "Phone number"',
-        'remove_duplicates': 'Remove Duplicate Rows (Email & Phone)',
-        'detect_country': 'Detect Country Based on Phone Prefix',
-        'filter_emails': 'Filter Emails Based on Blacklist',
-        'reset_index': 'Reset Index and Generate Sequential IDs',
-        'upload_header': '📥 Upload & Process Excel',
-        'file_uploader': 'Select an .xlsx file',
-        'show_filters': '🔧 Show Filters',
-        'consolidate_rows': '🛠 Consolidate Rows by Company',
-        'filter_preview': '🔍 Filter Preview and Processed File',
-        'num_rows': 'Number of rows to display (1-5000)',
-        'filter_country': 'Filter by Country',
-        'filter_sphere': 'Filter by Business Sphere/Industry',
-        'filtered_preview': '🔍 Filtered Preview',
-        'download_file': '📥 Download Filtered File',
-        'rows_per_country': '📊 Rows Per Country',
-        'rows_per_sphere': '📊 Rows Per Business Sphere/Industry',
-        'column_country': 'Country',
-        'column_email': 'Email',
-        'column_phone': 'Phone Number',
-        'countries': {  # Translations for countries
-            'United States/Canada': 'United States/Canada',
-            'Russia/Kazakhstan': 'Russia/Kazakhstan',
-            'Egypt': 'Egypt',
-            'South Africa': 'South Africa',
-            'Greece': 'Greece',
-            'Netherlands': 'Netherlands',
-            'Belgium': 'Belgium',
-            'France': 'France',
-            'Spain': 'Spain',
-            'Hungary': 'Hungary',
-            'Italy': 'Italy',
-            'Romania': 'Romania',
-            'Switzerland': 'Switzerland',
-            'Austria': 'Austria',
-            'United Kingdom': 'United Kingdom',
-            'Denmark': 'Denmark',
-            'Sweden': 'Sweden',
-            'Norway': 'Norway',
-            'Poland': 'Poland',
-            'Germany': 'Germany',
-            'Peru': 'Peru',
-            'Mexico': 'Mexico',
-            'Cuba': 'Cuba',
-            'Argentina': 'Argentina',
-            'Brazil': 'Brazil',
-            'Chile': 'Chile'
-        }
-    },
-    'Русский': {
-        'title': '📊 Обработчик Excel для телефонов и электронной почты',
-        'config_header': '⚙️ Конфигурация',
-        'blacklist': 'Черный список (через запятую)',
-        'phone_prefix': 'Префикс телефона → Страна (префикс:страна в строке)',
-        'save_settings': '💾 Сохранить настройки',
-        'processing_steps': '🔧 Этапы обработки',
-        'remove_empty_cols': 'Удалить пустые столбцы',
-        'rename_column': 'Переименовать "Column_1" в "Номер телефона"',
-        'remove_duplicates': 'Удалить дублирующиеся строки (Email & Телефон)',
-        'detect_country': 'Определить страну по телефонному префиксу',
-        'filter_emails': 'Фильтровать электронные письма по черному списку',
-        'reset_index': 'Сбросить индекс и создать последовательные ID',
-        'upload_header': '📥 Загрузить и обработать Excel',
-        'file_uploader': 'Выберите файл .xlsx',
-        'show_filters': '🔧 Показать фильтры',
-        'consolidate_rows': '🛠 Объединить строки по компании',
-        'filter_preview': '🔍 Предварительный просмотр и обработанный файл',
-        'num_rows': 'Количество строк для отображения (1-5000)',
-        'filter_country': 'Фильтр по стране',
-        'filter_sphere': 'Фильтр по сфере бизнеса/индустрии',
-        'filtered_preview': '🔍 Предварительный просмотр',
-        'download_file': '📥 Скачать обработанный файл',
-        'rows_per_country': '📊 Строки по странам',
-        'rows_per_sphere': '📊 Строки по сфере бизнеса/индустрии',
-        'column_country': 'Страна',
-        'column_industry': 'Категория индустрии',
-        'column_email': 'Электронная почта',
-        'column_phone': 'Номер телефона',
-        'countries': {  # Translations for countries
-            'United States/Canada': 'США/Канада',
-            'Russia/Kazakhstan': 'Россия/Казахстан',
-            'Egypt': 'Египет',
-            'South Africa': 'Южная Африка',
-            'Greece': 'Греция',
-            'Netherlands': 'Нидерланды',
-            'Belgium': 'Бельгия',
-            'France': 'Франция',
-            'Spain': 'Испания',
-            'Hungary': 'Венгрия',
-            'Italy': 'Италия',
-            'Romania': 'Румыния',
-            'Switzerland': 'Швейцария',
-            'Austria': 'Австрия',
-            'United Kingdom': 'Великобритания',
-            'Denmark': 'Дания',
-            'Sweden': 'Швеция',
-            'Norway': 'Норвегия',
-            'Poland': 'Польша',
-            'Germany': 'Германия',
-            'Peru': 'Перу',
-            'Mexico': 'Мексика',
-            'Cuba': 'Куба',
-            'Argentina': 'Аргентина',
-            'Brazil': 'Бразилия',
-            'Chile': 'Чили'
-        }
-    }
-}
 
 # Get translations for the selected language
 t = translations[language]
@@ -404,24 +246,21 @@ if st.sidebar.button(t['save_settings']):
 st.sidebar.divider()
 st.sidebar.header(t['processing_steps'])
 remove_empty_cols = st.sidebar.toggle(t['remove_empty_cols'], value=True)
-rename_column = st.sidebar.toggle(t['rename_column'], value=True)
+#rename_column = st.sidebar.toggle(t['rename_column'], value=True)
 remove_duplicates = st.sidebar.toggle(t['remove_duplicates'], value=True)
-detect_country_step = st.sidebar.toggle(t['detect_country'], value=True)
+#detect_country_step = st.sidebar.toggle(t['detect_country'], value=True)
 filter_emails_step = st.sidebar.toggle(t['filter_emails'], value=True)
 reset_index_step = st.sidebar.toggle(t['reset_index'], value=True)
 
-st.write('---')
+#st.divider()
 st.header(t['upload_header'])
 uploaded = st.file_uploader(t['file_uploader'], type='xlsx')
 
 if uploaded:
     # Pass the toggle states to the process_file function
-    result_df = process_file(uploaded.read(), cfg, remove_empty_cols, rename_column,
-                             remove_duplicates, detect_country_step,
+    result_df = process_file(uploaded.read(), cfg, remove_empty_cols,
+                             remove_duplicates,
                              filter_emails_step, reset_index_step)
-
-    # Translate column names in the result DataFrame
-    result_df = translate_columns(result_df, t)
 
     # Save initial row counts for Main Category and Subcategory at the start of the app
     if uploaded:
@@ -439,27 +278,41 @@ if uploaded:
                 return "Other", "Other"
 
             # Apply the mapping to create new columns
-            filtered_df[['Main Category', 'Subcategory']] = filtered_df[industry_column].apply(
+            filtered_df[[t['column_main_category'], t['column_subcategory']]] = filtered_df[industry_column].apply(
                 lambda x: pd.Series(map_to_main_and_subcategory(x))
             )
 
         # Save initial row counts for Main Category and Subcategory
-        initial_category_counts = filtered_df.groupby(['Main Category', 'Subcategory']).size().reset_index(name='Count')
-        initial_country_counts = filtered_df[t['column_country']].value_counts().reset_index(name='Count')
+        initial_category_counts = filtered_df.groupby([t['column_main_category'], t['column_subcategory']]).size().reset_index(name='Count')
+        # Debug: Check if the country column exists
+        if t['column_country'] in filtered_df.columns:
+            # Save initial row counts for countries
+            initial_country_counts = filtered_df[t['column_country']].value_counts().reset_index(name='Count')
+        else:
+            st.warning(f"⚠️ The column '{t['column_country']}' does not exist in the DataFrame.")
+            initial_country_counts = pd.DataFrame(columns=[t['column_country'], 'Count'])
 
 
     # Filtering Section
-    show_filters = st.toggle(t['show_filters'], value=True)  # Toggle for showing filters
-    consolidate_rows = st.toggle("🛠 Consolidate Rows by Company", value=False, disabled=True)  
-    remove_columns_toggle = st.toggle("🗑️ Remove unnecessary columns", value=True)
-    rename_columns_toggle = st.toggle("📝 Rename Columns", value=True)
+    #show_filters = st.toggle(t['show_filters'], value=True)  # Toggle for showing filters
+    consolidate_rows = st.toggle(t['consolidate_rows_by_company'], value=False)#, disabled=True)  
+    remove_columns_toggle = st.toggle(t['remove_unnecessary_columns'], value=True)
+    rename_columns_toggle = st.toggle(t['rename_columns'], value=True)
 
     # Initialize filtered_df with result_df
     filtered_df = result_df.copy()
 
     if consolidate_rows:
         # Consolidate rows by company
-        if 'Email' in result_df.columns or 'Websites' in result_df.columns:
+        email_col = t['column_email']
+        websites_col = t['column_websites']
+        company_identifier_col = 'Company Identifier'
+
+        # Ensure the email and website columns exist in the DataFrame
+        email_exists = email_col in filtered_df.columns
+        websites_exists = websites_col in filtered_df.columns
+
+        if email_exists or websites_exists:
             # Extract company identifiers
             def extract_email_domain(email):
                 if pd.notna(email) and '@' in email:
@@ -473,130 +326,133 @@ if uploaded:
                 return None
 
             # Create a new column for company grouping
-            result_df['Company Identifier'] = result_df['Email'].apply(extract_email_domain)
-            if 'Websites' in result_df.columns:
-                result_df['Company Identifier'].fillna(result_df['Websites'].apply(normalize_url), inplace=True)
+            filtered_df[company_identifier_col] = None
+            if email_exists:
+                filtered_df[company_identifier_col] = filtered_df[email_col].apply(extract_email_domain)
+            if websites_exists:
+                filtered_df[company_identifier_col] = filtered_df[company_identifier_col].fillna(
+                    filtered_df[websites_col].apply(normalize_url)
+                )
+
+            # Drop rows where the company identifier is missing
+            filtered_df = filtered_df.dropna(subset=[company_identifier_col])
 
             # Group by the company identifier
-            company_group = result_df.groupby('Company Identifier', as_index=False)
+            company_group = filtered_df.groupby(company_identifier_col, as_index=False)
 
             def consolidate_column(series):
                 unique_values = series.dropna().unique()
                 return '; '.join(unique_values)
 
-            # Consolidate emails, phone numbers, and links
-            if 'Email' in result_df.columns:
-                result_df['Email'] = company_group['Email'].transform(consolidate_column)
-            if 'Phone number' in result_df.columns:
-                result_df['Phone number'] = company_group['Phone number'].transform(consolidate_column)
-            if 'Websites' in result_df.columns:
-                result_df['Websites'] = company_group['Websites'].transform(consolidate_column)
+            # Consolidate emails, phone numbers, and websites
+            if email_exists:
+                filtered_df[email_col] = company_group[email_col].transform(consolidate_column)
+            if t['column_phone'] in filtered_df.columns:
+                filtered_df[t['column_phone']] = company_group[t['column_phone']].transform(consolidate_column)
+            if websites_exists:
+                filtered_df[websites_col] = company_group[websites_col].transform(consolidate_column)
 
             # Drop duplicate rows after consolidation
-            result_df = result_df.drop_duplicates(subset=['Company Identifier'])
+            filtered_df = filtered_df.drop_duplicates(subset=[company_identifier_col])
 
             # Drop the temporary 'Company Identifier' column
-            result_df.drop(columns=['Company Identifier'], inplace=True)
-
-
-    # Rename all columns in the DataFrame
-    #filtered_df.columns = [f"Column_{i+1}" for i in range(len(filtered_df.columns))]
-
-    if show_filters:
-        st.header(t['filter_preview'])
-
-        # Filter: Number of rows
-        max_rows = st.number_input(t['num_rows'], min_value=500, max_value=5000, value=500)
-
-        # Filter: Country selection
-        selected_countries = []
-        if t['column_country'] in result_df.columns:
-            available_countries = result_df[t['column_country']].dropna().unique().tolist()
-            selected_countries = st.multiselect(t['filter_country'], available_countries)
-
-        # Ensure Main Category and Subcategory columns are added
-        if len(filtered_df.columns) > 13:
-            industry_column = filtered_df.columns[13]  # Column at index 13
-
-            def map_to_main_and_subcategory(value):
-                for main_category, subcategories in industry_mapping.items():
-                    if value in subcategories.keys():  # Check against the keys of subcategories
-                        return main_category, value
-                return "Other", "Other"
-
-            # Apply the mapping to create new columns
-            filtered_df[['Main Category', 'Subcategory']] = filtered_df[industry_column].apply(
-                lambda x: pd.Series(map_to_main_and_subcategory(x))
-            )
-
-        # Filter: Main Category and Subcategory with counts
-        if 'Main Category' in filtered_df.columns and 'Subcategory' in filtered_df.columns:
-            # Get available main categories with counts
-            main_category_counts = initial_category_counts.groupby('Main Category')['Count'].sum().to_dict()
-            available_main_categories = filtered_df['Main Category'].dropna().unique().tolist()
-            selected_main_categories = []
-
-            st.subheader("Select Main Categories")
-            for category in available_main_categories:
-                count = main_category_counts.get(category, 0)
-                if st.checkbox(f"{category} ({count})", key=f"main_category_{category}"):
-                    selected_main_categories.append(category)
-
-            selected_subcategories = []
-            if selected_main_categories:
-                for main_category in selected_main_categories:
-                    st.subheader(f"Subcategories for {main_category}")
-                    # Get available subcategories for the selected main category with counts
-                    subcategory_counts = initial_category_counts[initial_category_counts['Main Category'] == main_category].set_index('Subcategory')['Count'].to_dict()
-                    available_subcategories = filtered_df[filtered_df['Main Category'] == main_category]['Subcategory'].dropna().unique().tolist()
-                    for subcategory in available_subcategories:
-                        count = subcategory_counts.get(subcategory, 0)
-                        if st.checkbox(f"{subcategory} ({count})", key=f"subcategory_{main_category}_{subcategory}"):
-                            selected_subcategories.append(subcategory)
-            else:
-                selected_subcategories = None
+            filtered_df.drop(columns=[company_identifier_col], inplace=True)
         else:
-            selected_main_categories = None
-            selected_subcategories = None
+            st.warning("⚠️ Neither email nor website columns are available for consolidation.")
 
-        # Apply filters
-        if selected_countries:
-            filtered_df = filtered_df[filtered_df[t['column_country']].isin(selected_countries)]
+    st.header(t['filter_preview'])
 
+    # Filter: Number of rows
+    max_rows = st.number_input(t['num_rows'], min_value=500, max_value=5000, value=500)
+
+    # Filter: Country selection
+    selected_countries = []
+    if t['column_country'] in result_df.columns:
+        available_countries = result_df[t['column_country']].dropna().unique().tolist()
+        selected_countries = st.multiselect(t['filter_country'], available_countries)
+
+    # Ensure Main Category and Subcategory columns are added
+    if len(filtered_df.columns) > 13:
+        industry_column = filtered_df.columns[13]  # Column at index 13
+
+        def map_to_main_and_subcategory(value):
+            for main_category, subcategories in industry_mapping.items():
+                if value in subcategories.keys():  # Check against the keys of subcategories
+                    return main_category, value
+            return "Other", "Other"
+
+        # Apply the mapping to create new columns
+        filtered_df[[t['column_main_category'], t['column_subcategory']]] = filtered_df[industry_column].apply(
+            lambda x: pd.Series(map_to_main_and_subcategory(x))
+        )
+
+    # Filter: Main Category and Subcategory with counts
+    if t['column_main_category'] in filtered_df.columns and t['column_subcategory'] in filtered_df.columns:
+        # Get available main categories with counts
+        main_category_counts = initial_category_counts.groupby(t['column_main_category'])['Count'].sum().to_dict()
+        available_main_categories = filtered_df[t['column_main_category']].dropna().unique().tolist()
+        selected_main_categories = []
+
+        st.subheader(t['select_main_categories'])
+        for category in available_main_categories:
+            count = main_category_counts.get(category, 0)
+            if st.checkbox(f"{category} ({count})", key=f"main_category_{category}"):
+                selected_main_categories.append(category)
+
+        selected_subcategories = []
         if selected_main_categories:
-            filtered_df = filtered_df[filtered_df['Main Category'].isin(selected_main_categories)]
-
-        if selected_subcategories:
-            filtered_df = filtered_df[filtered_df['Subcategory'].isin(selected_subcategories)]
-
-        # Limit the number of rows
-        filtered_df = filtered_df.head(max_rows)
-
-        # Remove unnecessary columns from the filtered DataFrame      
-        if remove_columns_toggle:
-            filtered_df = filtered_df.drop(columns=["Status", "Column_2", "Column_4", "Column_5", "Column_6", "Column_7", "Column_8", "Column_12"], axis=1)
-        
-        # Rename columns
-        if rename_columns_toggle and 'Column_3' in result_df.columns:
-            filtered_df.rename(columns={
-            'Column_3': 'Websites',
-            'Column_9': 'Address 1',
-            'Column_10': 'Address 2',
-            'Column_11': 'Address 3',
-            }, inplace=True)
-       
-       # Display filtered preview
-        if filtered_df.empty:
-            st.warning("No data available for the selected filters.")
+            for main_category in selected_main_categories:
+                st.subheader(f"{t['subcategories_for']} {main_category}")
+                # Get available subcategories for the selected main category with counts
+                subcategory_counts = initial_category_counts[initial_category_counts[t['column_main_category']] == main_category].set_index(t['column_subcategory'])['Count'].to_dict()
+                available_subcategories = filtered_df[filtered_df[t['column_main_category']] == main_category][t['column_subcategory']].dropna().unique().tolist()
+                for subcategory in available_subcategories:
+                    count = subcategory_counts.get(subcategory, 0)
+                    if st.checkbox(f"{subcategory} ({count})", key=f"subcategory_{main_category}_{subcategory}"):
+                        selected_subcategories.append(subcategory)
         else:
-            st.subheader(t['filtered_preview'])
-            st.dataframe(filtered_df)
-
+            selected_subcategories = None
     else:
-        # If filters are not shown, use the unfiltered DataFrame
-        filtered_df = result_df.copy()
-    # Translate values in the filtered DataFrame
-    #filtered_df = translate_values(filtered_df, t)
+        selected_main_categories = None
+        selected_subcategories = None
+
+    # Apply filters
+    if selected_countries:
+        filtered_df = filtered_df[filtered_df[t['column_country']].isin(selected_countries)]
+
+    if selected_main_categories:
+        filtered_df = filtered_df[filtered_df[t['column_main_category']].isin(selected_main_categories)]
+
+    if selected_subcategories:
+        filtered_df = filtered_df[filtered_df[t['column_subcategory']].isin(selected_subcategories)]
+
+    # Limit the number of rows
+    filtered_df = filtered_df.head(max_rows)
+
+    # Remove unnecessary columns from the filtered DataFrame      
+    if remove_columns_toggle:
+        filtered_df = filtered_df.drop(columns=["Status", "Column_2", "Column_4", "Column_5", "Column_6", "Column_7", "Column_8", "Column_12"], axis=1)
+    
+    # Rename columns
+    if rename_columns_toggle and 'Column_3' in result_df.columns:
+        filtered_df.rename(columns={
+        'Column_3': t['column_websites'],
+        'Column_9': t['column_address_1'],
+        'Column_10': t['column_address_2'],
+        'Column_11': t['column_address_3'],
+        }, inplace=True)
+
+    filtered_df = clean_address_columns(filtered_df, t)
+    filtered_df = clean_website_column(filtered_df, t['column_websites'])
+    
+    print(filtered_df.columns)
+
+    # Display filtered preview
+    if filtered_df.empty:
+        st.warning("No data available for the selected filters.")
+    else:
+        st.subheader(t['filtered_preview'])
+        st.dataframe(filtered_df)
 
     # Add Main Category and Subcategory columns to the filtered preview based on column 13
     if len(filtered_df.columns) > 13:
@@ -609,10 +465,9 @@ if uploaded:
             return "Other", "Other"
 
         # Apply the mapping to create new columns
-        filtered_df[['Main Category', 'Subcategory']] = filtered_df[industry_column].apply(
+        filtered_df[[t['column_main_category'], t['column_subcategory']]] = filtered_df[industry_column].apply(
             lambda x: pd.Series(map_to_main_and_subcategory(x))
         )
-
 
     # Download filtered file
     buf = BytesIO()
@@ -631,9 +486,11 @@ if uploaded:
         st.dataframe(initial_country_counts)
 
     # Count rows per Main Category and Subcategory based on filtered preview
-    show_category_counts = st.toggle("📊 Rows Per Main Category and Subcategory", value=True)
-    if show_category_counts and 'Main Category' in filtered_df.columns and 'Subcategory' in filtered_df.columns:
+    show_category_counts = st.toggle(t['rows_per_category'], value=True)
+    if show_category_counts and t['column_main_category'] in filtered_df.columns and t['column_subcategory'] in filtered_df.columns:
 
         # Display the counts
-        st.subheader("📊 Rows Per Main Category and Subcategory (Filtered)")
+        st.subheader(t['rows_per_category'])
         st.dataframe(initial_category_counts)
+
+

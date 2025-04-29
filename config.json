@@ -4,7 +4,8 @@
     "hr",
     "press",
     "admin",
-    "recruitment"
+    "recruitment",
+    "test"
   ],
   "phone_prefix_map": {
     "+1": "United States/Canada",
