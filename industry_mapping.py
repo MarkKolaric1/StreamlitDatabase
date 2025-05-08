@@ -1,5 +1,4 @@
 # ---------- Industry Mapping ----------
-# Updated Industry Mapping with Main Categories and Subcategories
 industry_mapping = {
     "Agriculture & Food": {
         "Crop farm": "Crop farm",

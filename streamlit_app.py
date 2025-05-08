@@ -160,20 +160,17 @@ def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool,
                  filter_emails_step: bool, reset_index_step: bool) -> pd.DataFrame:
     df = pd.read_excel(BytesIO(file_bytes), engine='openpyxl')
     
-    # Remove columns that are completely empty
+    # Remove columns that are mostly empty (e.g., less than 3 non-NA entries)
     if remove_empty_cols:
-        df.dropna(axis=1, how='all', inplace=True)
+        df = df.loc[:, df.notna().sum() >= 20]
     
-    phone_cols = [c for c in df.columns if 'phone' in c.lower()]
-    
-    # Rename "Column_1" to "Phone number"
-    if not phone_cols:
-        if "Column_1" in df.columns:
-            df.rename(columns={"Column_1": "Phone number"}, inplace=True)
-            phone_cols = ["Phone number"]
-        else:
-            st.error('⚠️ No phone column found and "Column_1" is not present.')
-            return df
+    # Rename "Column_1" to "Phone number" if it exists
+    if 'Column_1' in df.columns:
+        df.rename(columns={'Column_1': "Phone number"}, inplace=True)
+    else:
+        st.error('⚠️ "Column_1" is not present in the DataFrame.')
+        return df
+    phone_cols = ["Phone number"]
 
     # Remove duplicate rows based on email and phone number
     email_cols = [c for c in df.columns if df[c].astype(str).str.contains('@', na=False).any()]
@@ -197,15 +194,10 @@ def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool,
     
     
     # Translate column names in the result DataFrame
-    print("Columns before renaming:", df.columns)
-    df = translate_columns(df, t)
-    print("Columns after renaming:", df.columns)
-    
+    df = translate_columns(df, t)    
 
     # Translate values in the result DataFrame
     df = translate_values(df, t)
-
-    
 
     return df
 
@@ -246,13 +238,10 @@ if st.sidebar.button(t['save_settings']):
 st.sidebar.divider()
 st.sidebar.header(t['processing_steps'])
 remove_empty_cols = st.sidebar.toggle(t['remove_empty_cols'], value=True)
-#rename_column = st.sidebar.toggle(t['rename_column'], value=True)
 remove_duplicates = st.sidebar.toggle(t['remove_duplicates'], value=True)
-#detect_country_step = st.sidebar.toggle(t['detect_country'], value=True)
 filter_emails_step = st.sidebar.toggle(t['filter_emails'], value=True)
 reset_index_step = st.sidebar.toggle(t['reset_index'], value=True)
 
-#st.divider()
 st.header(t['upload_header'])
 uploaded = st.file_uploader(t['file_uploader'], type='xlsx')
 
@@ -266,7 +255,7 @@ if uploaded:
     if uploaded:
         # Initialize filtered_df with result_df
         filtered_df = result_df.copy()
-
+        
         # Add Main Category and Subcategory columns to the filtered preview based on column 13
         if len(filtered_df.columns) > 13:
             industry_column = filtered_df.columns[13]  # Column at index 13
@@ -275,13 +264,13 @@ if uploaded:
                 for main_category, subcategories in industry_mapping.items():
                     if value in subcategories.keys():  # Check against the keys of subcategories
                         return main_category, value
-                return "Other", "Other"
+                return "Other", value
 
             # Apply the mapping to create new columns
             filtered_df[[t['column_main_category'], t['column_subcategory']]] = filtered_df[industry_column].apply(
                 lambda x: pd.Series(map_to_main_and_subcategory(x))
             )
-
+        
         # Save initial row counts for Main Category and Subcategory
         initial_category_counts = filtered_df.groupby([t['column_main_category'], t['column_subcategory']]).size().reset_index(name='Count')
         # Debug: Check if the country column exists
@@ -291,7 +280,6 @@ if uploaded:
         else:
             st.warning(f"⚠️ The column '{t['column_country']}' does not exist in the DataFrame.")
             initial_country_counts = pd.DataFrame(columns=[t['column_country'], 'Count'])
-
 
     # Filtering Section
     #show_filters = st.toggle(t['show_filters'], value=True)  # Toggle for showing filters
@@ -370,7 +358,7 @@ if uploaded:
     if t['column_country'] in result_df.columns:
         available_countries = result_df[t['column_country']].dropna().unique().tolist()
         selected_countries = st.multiselect(t['filter_country'], available_countries)
-
+    
     # Ensure Main Category and Subcategory columns are added
     if len(filtered_df.columns) > 13:
         industry_column = filtered_df.columns[13]  # Column at index 13
@@ -379,13 +367,13 @@ if uploaded:
             for main_category, subcategories in industry_mapping.items():
                 if value in subcategories.keys():  # Check against the keys of subcategories
                     return main_category, value
-            return "Other", "Other"
+            return "Other", value
 
         # Apply the mapping to create new columns
         filtered_df[[t['column_main_category'], t['column_subcategory']]] = filtered_df[industry_column].apply(
             lambda x: pd.Series(map_to_main_and_subcategory(x))
         )
-
+    
     # Filter: Main Category and Subcategory with counts
     if t['column_main_category'] in filtered_df.columns and t['column_subcategory'] in filtered_df.columns:
         # Get available main categories with counts
@@ -431,15 +419,21 @@ if uploaded:
 
     # Remove unnecessary columns from the filtered DataFrame      
     if remove_columns_toggle:
-        filtered_df = filtered_df.drop(columns=["Status", "Column_2", "Column_4", "Column_5", "Column_6", "Column_7", "Column_8", "Column_12"], axis=1)
-    
+        columns_to_drop = [col for col in filtered_df.columns if col in ["Status", "Column_2", "Column_4", "Column_5", "Column_6", "Column_7", "Column_8", "Column_12"]]
+        filtered_df = filtered_df.drop(columns=columns_to_drop, axis=1)
     # Rename columns
-    if rename_columns_toggle and 'Column_3' in result_df.columns:
+    if rename_columns_toggle:
         filtered_df.rename(columns={
-        'Column_3': t['column_websites'],
-        'Column_9': t['column_address_1'],
-        'Column_10': t['column_address_2'],
-        'Column_11': t['column_address_3'],
+            col: t['column_websites'] for col in filtered_df.columns if 'Column_3' in col
+        }, inplace=True)
+        filtered_df.rename(columns={
+            col: t['column_address_1'] for col in filtered_df.columns if 'Column_9' in col
+        }, inplace=True)
+        filtered_df.rename(columns={
+            col: t['column_address_2'] for col in filtered_df.columns if 'Column_10' in col
+        }, inplace=True)
+        filtered_df.rename(columns={
+            col: t['column_address_3'] for col in filtered_df.columns if 'Column_11' in col
         }, inplace=True)
 
     filtered_df = clean_address_columns(filtered_df, t)
@@ -453,7 +447,7 @@ if uploaded:
     else:
         st.subheader(t['filtered_preview'])
         st.dataframe(filtered_df)
-
+    
     # Add Main Category and Subcategory columns to the filtered preview based on column 13
     if len(filtered_df.columns) > 13:
         industry_column = filtered_df.columns[13]  # Column at index 13
@@ -462,13 +456,13 @@ if uploaded:
             for main_category, subcategories in industry_mapping.items():
                 if value in subcategories.keys():  # Check against the keys of subcategories
                     return main_category, value
-            return "Other", "Other"
+            return "Other", value
 
         # Apply the mapping to create new columns
         filtered_df[[t['column_main_category'], t['column_subcategory']]] = filtered_df[industry_column].apply(
             lambda x: pd.Series(map_to_main_and_subcategory(x))
         )
-
+    
     # Download filtered file
     buf = BytesIO()
     filtered_df.to_excel(buf, index=False, engine='openpyxl')
@@ -478,7 +472,7 @@ if uploaded:
                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
     # Count rows per country
-    show_country_counts = st.toggle(t['rows_per_country'], value=True)
+    show_country_counts = st.toggle(t['rows_per_country'], value=False)
     if show_country_counts and t['column_country'] in filtered_df.columns:
 
         # Display the counts
@@ -486,7 +480,7 @@ if uploaded:
         st.dataframe(initial_country_counts)
 
     # Count rows per Main Category and Subcategory based on filtered preview
-    show_category_counts = st.toggle(t['rows_per_category'], value=True)
+    show_category_counts = st.toggle(t['rows_per_category'], value=False)
     if show_category_counts and t['column_main_category'] in filtered_df.columns and t['column_subcategory'] in filtered_df.columns:
 
         # Display the counts
