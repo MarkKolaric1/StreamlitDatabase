@@ -79,19 +79,30 @@ def translate_values(df: pd.DataFrame, t: dict) -> pd.DataFrame:
         df[t['column_country']] = df[t['column_country']].apply(
             lambda x: t['countries'].get(str(x).strip(), x) if pd.notna(x) else x
         )
-    
+
     # Translate main categories
     if t['column_main_category'] in df.columns:
         df[t['column_main_category']] = df[t['column_main_category']].apply(
             lambda x: t['categories'].get(str(x).strip(), x) if pd.notna(x) else x
         )
-    
+
     # Translate subcategories
     if t['column_subcategory'] in df.columns:
-        df[t['column_subcategory']] = df[t['column_subcategory']].apply(
-            lambda x: t['subcategories'].get(str(x).strip(), x) if pd.notna(x) else x
-        )
-    
+        # Try to translate using both the subcategory and the main category context
+        def translate_subcat(row):
+            subcat = str(row[t['column_subcategory']]).strip() if pd.notna(row[t['column_subcategory']]) else ""
+            maincat = str(row[t['column_main_category']]).strip() if pd.notna(row[t['column_main_category']]) else ""
+            # Try subcategory translation first
+            if subcat in t['subcategories']:
+                return t['subcategories'][subcat]
+            # Try translation as "MainCat > SubCat" if such keys exist in your translations
+            key_combo = f"{maincat} > {subcat}"
+            if key_combo in t['subcategories']:
+                return t['subcategories'][key_combo]
+            return subcat
+
+        df[t['column_subcategory']] = df.apply(translate_subcat, axis=1)
+
     return df
 
 def clean_website_column(df: pd.DataFrame, website_col: str) -> pd.DataFrame:
@@ -147,11 +158,11 @@ def clean_address_columns(df: pd.DataFrame, t: dict) -> pd.DataFrame:
         # Remove Address 2 and Address 3 columns
         df.drop(columns=[addr2, addr3], inplace=True)
 
-        # Rename Address 1 to "Address"
-        df.rename(columns={addr1: "Address"}, inplace=True)
+        # Rename Address 1 to the translated "Address"
+        df.rename(columns={addr1: t['column_address']}, inplace=True)
 
     else:
-        st.warning(f"⚠️ One or more address/country columns are missing: {addr1}, {addr2}, {addr3}, {country}")
+        st.warning(f"⚠️ One or more address/country columns are missing: {addr1}, {addr2, addr3, country}")
     return df
 # Updated process_file function with industry mapping
 @st.cache_data(show_spinner=False)
@@ -162,7 +173,8 @@ def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool,
     
     # Remove columns that are mostly empty (e.g., less than 3 non-NA entries)
     if remove_empty_cols:
-        df = df.loc[:, df.notna().sum() >= 20]
+        df = df.loc[:, df.notna().sum() >= 100]
+        
     
     # Rename "Column_1" to "Phone number" if it exists
     if 'Column_1' in df.columns:
@@ -351,7 +363,7 @@ if uploaded:
     st.header(t['filter_preview'])
 
     # Filter: Number of rows
-    max_rows = st.number_input(t['num_rows'], min_value=500, max_value=5000, value=500)
+    max_rows = st.number_input(t['num_rows'], min_value=500, max_value=50000, value=500)
 
     # Filter: Country selection
     selected_countries = []
@@ -384,19 +396,25 @@ if uploaded:
         st.subheader(t['select_main_categories'])
         for category in available_main_categories:
             count = main_category_counts.get(category, 0)
-            if st.checkbox(f"{category} ({count})", key=f"main_category_{category}"):
+            # Translate the category for display
+            display_category = t['categories'].get(category, category)
+            if st.checkbox(f"{display_category} ({count})", key=f"main_category_{category}"):
                 selected_main_categories.append(category)
 
         selected_subcategories = []
         if selected_main_categories:
             for main_category in selected_main_categories:
-                st.subheader(f"{t['subcategories_for']} {main_category}")
+                # Translate the main category for display
+                display_main_category = t['categories'].get(main_category, main_category)
+                st.subheader(f"{t['subcategories_for']} {display_main_category}")
                 # Get available subcategories for the selected main category with counts
                 subcategory_counts = initial_category_counts[initial_category_counts[t['column_main_category']] == main_category].set_index(t['column_subcategory'])['Count'].to_dict()
                 available_subcategories = filtered_df[filtered_df[t['column_main_category']] == main_category][t['column_subcategory']].dropna().unique().tolist()
                 for subcategory in available_subcategories:
                     count = subcategory_counts.get(subcategory, 0)
-                    if st.checkbox(f"{subcategory} ({count})", key=f"subcategory_{main_category}_{subcategory}"):
+                    # Translate the subcategory for display
+                    display_subcategory = t['subcategories'].get(subcategory, subcategory)
+                    if st.checkbox(f"{display_subcategory} ({count})", key=f"subcategory_{main_category}_{subcategory}"):
                         selected_subcategories.append(subcategory)
         else:
             selected_subcategories = None
