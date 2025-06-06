@@ -5,6 +5,11 @@ from io import BytesIO
 from pathlib import Path
 from industry_mapping import industry_mapping
 from translations import translations
+import psycopg2
+from psycopg2 import sql
+import os
+from dotenv import load_dotenv
+from os.path import join, dirname
 
 # Set page configuration (must be the first Streamlit command)
 st.set_page_config(page_title="ExportZilla", layout="wide")
@@ -12,7 +17,7 @@ st.set_page_config(page_title="ExportZilla", layout="wide")
 # ---------- Configuration ----------
 CONFIG_PATH = Path('config.json')
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=True)
 def load_config():
     default = {
         'email_blacklist': ['pr', 'hr', 'press'],
@@ -33,12 +38,23 @@ def save_config(cfg: dict):
 # ---------- Data Processing ----------
 
 def detect_country(series: pd.Series, prefix_map: dict) -> pd.Series:
-    prefixes = sorted(prefix_map.keys(), key=len, reverse=True)
+    s = series.fillna('').astype(str).str.replace(' ', '').str.replace('-', '')
     country = pd.Series('Unknown/No phone', index=series.index)
-    s = series.fillna('').astype(str)
+
+    # Kazakhstan: +76 or +77 (no spaces)
+    mask_kz = s.str.startswith('+76') | s.str.startswith('+77') | s.str.startswith('+7 6') | s.str.startswith('+7 7')
+    country[mask_kz] = 'Kazakhstan'
+
+    # Russia: +7 but not +76/+77
+    mask_ru = s.str.startswith('+7') & ~mask_kz
+    country[mask_ru] = 'Russian Federation'
+
+    # Other prefixes
+    prefixes = sorted([k for k in prefix_map if not k.startswith('+7')], key=len, reverse=True)
     for pre in prefixes:
-        mask = s.str.startswith(pre)
-        country.loc[mask] = prefix_map[pre]
+        mask = s.str.startswith(pre.replace(' ', '').replace('-', ''))
+        country[mask] = prefix_map[pre]
+
     return country
 
 # Email filtering function
@@ -54,19 +70,49 @@ def filter_emails(df: pd.DataFrame, blacklist: list) -> pd.DataFrame:
 
 # Apply translations to column names
 def translate_columns(df: pd.DataFrame, t: dict) -> pd.DataFrame:
-    column_mapping = {
-        'ID' : t['ID'],
+    # Only map columns present in the DataFrame, and always map to the selected language's output names
+    # Define source columns for both languages
+    english_source = {
+        'ID': t['ID'],
         'Email': t['column_email'],
         'Phone number': t['column_phone'],
-        'Websites' : t['column_websites'],
-        'Address 1' :t['column_address_1'],
-        'Address 2' :t['column_address_2'],
-        'Address 3' :t['column_address_2'],
+        'Websites': t['column_websites'],
+        'Address 1': t['column_address_1'],
+        'Address 2': t['column_address_2'],
+        'Address 3': t['column_address_3'],
         'Country': t['column_country'],
-        'Main Category' : t['column_main_category'],
-        'Subcategory' :t['column_subcategory'],
+        'Main Category': t['column_main_category'],
+        'Subcategory': t['column_subcategory'],
     }
-    return df.rename(columns=column_mapping)
+    russian_source = {
+        'Электронная почта': t['column_email'],
+        'Телефон': t['column_phone'],
+        'Веб-сайты': t['column_websites'],
+        'Адрес 1': t['column_address_1'],
+        'Адрес 2': t['column_address_2'],
+        'Адрес 3': t['column_address_3'],
+        'Страна': t['column_country'],
+        'Основная категория': t['column_main_category'],
+        'Подкатегория': t['column_subcategory'],
+        'Имя': t['ID'],
+        'Категория': t['column_main_category'],
+        'Значение': t['column_email'],
+        'Город': t['column_address_2'],
+        'Индекс': t['column_address_3'],
+        'Источник': t['column_websites'],
+    }
+    # Build mapping only for columns present in df
+    mapping = {}
+    for src, tgt in english_source.items():
+        if src in df.columns:
+            mapping[src] = tgt
+    for src, tgt in russian_source.items():
+        if src in df.columns:
+            mapping[src] = tgt
+    # Remove duplicate columns before renaming
+    df = df.loc[:, ~df.columns.duplicated(keep='first')]
+    renamed_df = df.rename(columns=mapping)
+    return renamed_df
 
 # Translate categories and countries in the DataFrame
 def translate_values(df: pd.DataFrame, t: dict) -> pd.DataFrame:
@@ -86,7 +132,7 @@ def translate_values(df: pd.DataFrame, t: dict) -> pd.DataFrame:
             lambda x: t['categories'].get(str(x).strip(), x) if pd.notna(x) else x
         )
 
-    # Translate subcategories
+    #Translate subcategories
     if t['column_subcategory'] in df.columns:
         # Try to translate using both the subcategory and the main category context
         def translate_subcat(row):
@@ -102,14 +148,10 @@ def translate_values(df: pd.DataFrame, t: dict) -> pd.DataFrame:
             return subcat
 
         df[t['column_subcategory']] = df.apply(translate_subcat, axis=1)
-
     return df
 
 def clean_website_column(df: pd.DataFrame, website_col: str) -> pd.DataFrame:
-    """
-    Cleans the website column by removing trailing paths and normalizing the URL.
-    Example: 'https://sirajpower.com/contact-us/' -> 'https://sirajpower.com/'
-    """
+    # Vectorized normalization of website column
     if website_col in df.columns:
         def normalize_url(url):
             if pd.notna(url) and '//' in url:
@@ -134,8 +176,6 @@ def clean_address_columns(df: pd.DataFrame, t: dict) -> pd.DataFrame:
     addr2 = t['column_address_2']
     addr3 = t['column_address_3']
     country = t['column_country']
-
-    # Debug: Print columns and a sample before cleaning
 
 
     if all(col in df.columns for col in [addr1, addr2, addr3, country]):
@@ -162,7 +202,7 @@ def clean_address_columns(df: pd.DataFrame, t: dict) -> pd.DataFrame:
         df.rename(columns={addr1: t['column_address']}, inplace=True)
 
     else:
-        st.warning(f"⚠️ One or more address/country columns are missing: {addr1}, {addr2, addr3, country}")
+        st.warning(f"⚠️ One or more address/country columns are missing")
     return df
 # Updated process_file function with industry mapping
 @st.cache_data(show_spinner=False)
@@ -170,46 +210,54 @@ def process_file(file_bytes: bytes, cfg: dict, remove_empty_cols: bool,
                  remove_duplicates: bool,
                  filter_emails_step: bool, reset_index_step: bool) -> pd.DataFrame:
     df = pd.read_excel(BytesIO(file_bytes), engine='openpyxl')
-    
-    # Remove columns that are mostly empty (e.g., less than 3 non-NA entries)
+
+    # 1. Remove mostly empty columns early
     if remove_empty_cols:
         df = df.loc[:, df.notna().sum() >= 100]
-        
-    
-    # Rename "Column_1" to "Phone number" if it exists
+
+    # 2. Rename phone column (vectorized, no .apply)
     if 'Column_1' in df.columns:
-        df.rename(columns={'Column_1': "Phone number"}, inplace=True)
+        df.rename(columns={'Column_1': t["column_phone"]}, inplace=True)
+        phone_col = t["column_phone"]
+    elif 'Телефон2' in df.columns:
+        df.rename(columns={'Телефон2': t["column_phone"]}, inplace=True)
+        phone_col = t["column_phone"]
     else:
         st.error('⚠️ "Column_1" is not present in the DataFrame.')
         return df
-    phone_cols = ["Phone number"]
+    phone_cols = [t["column_phone"]]
 
-    # Remove duplicate rows based on email and phone number
+    # 3. Remove duplicate rows based on email and phone number (vectorized)
     email_cols = [c for c in df.columns if df[c].astype(str).str.contains('@', na=False).any()]
-    if remove_duplicates and email_cols and phone_cols:
-        df.drop_duplicates(subset=[email_cols[0], phone_cols[0]], inplace=True)
+    if remove_duplicates and email_cols:
+        df.drop_duplicates(subset=[email_cols[0], phone_col], inplace=True)
 
-    # Detect country based on phone prefix
-    if phone_cols:
-        df['Country'] = detect_country(df[phone_cols[0]], cfg['phone_prefix_map'])
-    
-    # Filter emails based on blacklist
-    if filter_emails_step:
-        df = filter_emails(df, cfg['email_blacklist'])
-    
+    # 4. Normalize phone numbers (vectorized)
+    def fix_phone_number(val):
+        val = str(val).strip()
+        if val and val.replace('+', '').isdigit() and not val.startswith('+'):
+            return '+' + val
+        return val
+    df[phone_col] = df[phone_col].astype(str).str.strip().apply(fix_phone_number)
 
-    # Reset the index to ensure IDs are in correct order
+    # 5. Detect country (vectorized)
+    df[t['column_country']] = detect_country(df[phone_col], cfg['phone_prefix_map'])
+
+    # 6. Filter emails (vectorized)
+    if filter_emails_step and email_cols:
+        vals = df[email_cols[0]].astype(str).str.lower()
+        bad = vals.apply(lambda e: any(b in e for b in cfg['email_blacklist']))
+        df = df[~bad]
+
+    # 7. Reset index (vectorized)
     if reset_index_step:
         df.reset_index(drop=True, inplace=True)
-        df.index += 1  # Start IDs from 1 instead of 0
-        df.index.name = t['ID'] # Rename the index to 'ID'
-    
-    
-    # Translate column names in the result DataFrame
-    df = translate_columns(df, t)    
+        df.index += 1
+        df.index.name = 'ID'
 
-    # Translate values in the result DataFrame
-    df = translate_values(df, t)
+    # 8. Translate columns and values (vectorized)
+    #df = translate_columns(df, t)
+    #df = translate_values(df, t)
 
     return df
 
@@ -268,17 +316,25 @@ if uploaded:
         # Initialize filtered_df with result_df
         filtered_df = result_df.copy()
         
-        # Add Main Category and Subcategory columns to the filtered preview based on column 13
-        if len(filtered_df.columns) > 13:
-            industry_column = filtered_df.columns[13]  # Column at index 13
+        # Ensure Main Category and Subcategory columns are added
+        industry_column = None
+        if "Column_12" in filtered_df.columns:
+            industry_column = "Column_12"
+        elif "Категория" in filtered_df.columns:
+            industry_column = "Категория"
+        elif len(filtered_df.columns) > 13:
+            industry_column = filtered_df.columns[13]
+        else:
+            st.error('Column_12 not found in the DataFrame1.')
 
+        # Only apply mapping if industry_column is set and columns are missing
+        if industry_column and (t['column_main_category'] not in filtered_df.columns or t['column_subcategory'] not in filtered_df.columns):
             def map_to_main_and_subcategory(value):
                 for main_category, subcategories in industry_mapping.items():
-                    if value in subcategories.keys():  # Check against the keys of subcategories
+                    if value in subcategories.keys():
                         return main_category, value
                 return "Other", value
 
-            # Apply the mapping to create new columns
             filtered_df[[t['column_main_category'], t['column_subcategory']]] = filtered_df[industry_column].apply(
                 lambda x: pd.Series(map_to_main_and_subcategory(x))
             )
@@ -295,75 +351,19 @@ if uploaded:
 
     # Filtering Section
     #show_filters = st.toggle(t['show_filters'], value=True)  # Toggle for showing filters
-    consolidate_rows = st.toggle(t['consolidate_rows_by_company'], value=False)#, disabled=True)  
+    
     remove_columns_toggle = st.toggle(t['remove_unnecessary_columns'], value=True)
     rename_columns_toggle = st.toggle(t['rename_columns'], value=True)
+    consolidate_rows = st.toggle(t['consolidate_rows_by_company'], value=False) 
 
     # Initialize filtered_df with result_df
     filtered_df = result_df.copy()
 
-    if consolidate_rows:
-        # Consolidate rows by company
-        email_col = t['column_email']
-        websites_col = t['column_websites']
-        company_identifier_col = 'Company Identifier'
-
-        # Ensure the email and website columns exist in the DataFrame
-        email_exists = email_col in filtered_df.columns
-        websites_exists = websites_col in filtered_df.columns
-
-        if email_exists or websites_exists:
-            # Extract company identifiers
-            def extract_email_domain(email):
-                if pd.notna(email) and '@' in email:
-                    return email.split('@')[-1].lower()
-                return None
-
-            def normalize_url(url):
-                if pd.notna(url):
-                    # Remove paths and normalize the URL
-                    return url.split('/')[2].lower() if '//' in url else url.lower()
-                return None
-
-            # Create a new column for company grouping
-            filtered_df[company_identifier_col] = None
-            if email_exists:
-                filtered_df[company_identifier_col] = filtered_df[email_col].apply(extract_email_domain)
-            if websites_exists:
-                filtered_df[company_identifier_col] = filtered_df[company_identifier_col].fillna(
-                    filtered_df[websites_col].apply(normalize_url)
-                )
-
-            # Drop rows where the company identifier is missing
-            filtered_df = filtered_df.dropna(subset=[company_identifier_col])
-
-            # Group by the company identifier
-            company_group = filtered_df.groupby(company_identifier_col, as_index=False)
-
-            def consolidate_column(series):
-                unique_values = series.dropna().unique()
-                return '; '.join(unique_values)
-
-            # Consolidate emails, phone numbers, and websites
-            if email_exists:
-                filtered_df[email_col] = company_group[email_col].transform(consolidate_column)
-            if t['column_phone'] in filtered_df.columns:
-                filtered_df[t['column_phone']] = company_group[t['column_phone']].transform(consolidate_column)
-            if websites_exists:
-                filtered_df[websites_col] = company_group[websites_col].transform(consolidate_column)
-
-            # Drop duplicate rows after consolidation
-            filtered_df = filtered_df.drop_duplicates(subset=[company_identifier_col])
-
-            # Drop the temporary 'Company Identifier' column
-            filtered_df.drop(columns=[company_identifier_col], inplace=True)
-        else:
-            st.warning("⚠️ Neither email nor website columns are available for consolidation.")
-
+    
     st.header(t['filter_preview'])
 
     # Filter: Number of rows
-    max_rows = st.number_input(t['num_rows'], min_value=500, max_value=50000, value=500)
+    max_rows = st.number_input(t['num_rows'], min_value=500, max_value=500000, value=500000)
 
     # Filter: Country selection
     selected_countries = []
@@ -371,20 +371,34 @@ if uploaded:
         available_countries = result_df[t['column_country']].dropna().unique().tolist()
         selected_countries = st.multiselect(t['filter_country'], available_countries)
     
-    # Ensure Main Category and Subcategory columns are added
-    if len(filtered_df.columns) > 13:
-        industry_column = filtered_df.columns[13]  # Column at index 13
 
+    # Ensure Main Category and Subcategory columns are added
+    industry_column = None
+    if "Column_12" in filtered_df.columns:
+        industry_column = "Column_12"
+    elif "Категория" in filtered_df.columns:
+        industry_column = "Категория"
+    else:
+        st.error('Column_12 not found in the DataFrame2.')
+
+    # Only apply mapping if industry_column is set and columns are missing
+    if industry_column and (t['column_main_category'] not in filtered_df.columns or t['column_subcategory'] not in filtered_df.columns):
         def map_to_main_and_subcategory(value):
             for main_category, subcategories in industry_mapping.items():
-                if value in subcategories.keys():  # Check against the keys of subcategories
+                if value in subcategories.keys():
                     return main_category, value
             return "Other", value
 
-        # Apply the mapping to create new columns
         filtered_df[[t['column_main_category'], t['column_subcategory']]] = filtered_df[industry_column].apply(
             lambda x: pd.Series(map_to_main_and_subcategory(x))
         )
+
+    # Print all unique subcategories that fall under the "Other" main category
+    if t['column_main_category'] in filtered_df.columns and t['column_subcategory'] in filtered_df.columns:
+        other_subcats = filtered_df.loc[
+            filtered_df[t['column_main_category']] == "Other", t['column_subcategory']
+        ].dropna().unique().tolist()
+        print("Unique subcategories under 'Other':", other_subcats)
     
     # Filter: Main Category and Subcategory with counts
     if t['column_main_category'] in filtered_df.columns and t['column_subcategory'] in filtered_df.columns:
@@ -437,27 +451,103 @@ if uploaded:
 
     # Remove unnecessary columns from the filtered DataFrame      
     if remove_columns_toggle:
-        columns_to_drop = [col for col in filtered_df.columns if col in ["Status", "Column_2", "Column_4", "Column_5", "Column_6", "Column_7", "Column_8", "Column_12"]]
+        columns_to_drop = [col for col in filtered_df.columns if col in [
+            "Status", "Column_2", "Column_4", "Column_5", "Column_6", "Column_7", "Column_8", "Column_12", 
+            "Имя", "Ключевые слова", "Заголовок", "META Description", "META Keywords", "Домен", "PHONES", "Категория", "Имя пользователя"
+            ]]
         filtered_df = filtered_df.drop(columns=columns_to_drop, axis=1)
     # Rename columns
     if rename_columns_toggle:
         filtered_df.rename(columns={
-            col: t['column_websites'] for col in filtered_df.columns if 'Column_3' in col
+            col: t['column_websites'] for col in filtered_df.columns if 'Column_3' in col or 'Источник' in col
         }, inplace=True)
         filtered_df.rename(columns={
-            col: t['column_address_1'] for col in filtered_df.columns if 'Column_9' in col
+            col: t['column_address_1'] for col in filtered_df.columns if 'Column_9' in col #or 'Страна' in col
         }, inplace=True)
         filtered_df.rename(columns={
-            col: t['column_address_2'] for col in filtered_df.columns if 'Column_10' in col
+            col: t['column_address_2'] for col in filtered_df.columns if 'Column_10' in col or 'Город' in col
         }, inplace=True)
         filtered_df.rename(columns={
-            col: t['column_address_3'] for col in filtered_df.columns if 'Column_11' in col
+            col: t['column_address_3'] for col in filtered_df.columns if 'Column_11' in col or 'Индекс' in col # 'Адрес' in col
+        }, inplace=True)
+        filtered_df.rename(columns={
+            col: t['column_email'] for col in filtered_df.columns if 'Email' in col or 'Значение' in col
         }, inplace=True)
 
     filtered_df = clean_address_columns(filtered_df, t)
     filtered_df = clean_website_column(filtered_df, t['column_websites'])
-    
-    print(filtered_df.columns)
+
+    if consolidate_rows:
+        # Consolidate rows by company
+        email_col = t['column_email']
+        websites_col = t['column_websites']
+        company_identifier_col = 'Company Identifier'
+
+        # Ensure the email and website columns exist in the DataFrame
+        email_exists = email_col in filtered_df.columns
+        websites_exists = websites_col in filtered_df.columns
+
+        if email_exists or websites_exists:
+            # Extract company identifiers
+            def extract_email_domain(email):
+                if pd.notna(email) and '@' in email:
+                    return email.split('@')[-1].lower()
+                return None
+
+            def normalize_url(url):
+                if pd.notna(url):
+                    # Remove paths and normalize the URL
+                    return url.split('/')[2].lower() if '//' in url else url.lower()
+                return None
+
+            # List of common/free email domains
+            free_email_domains = {
+                "gmail.com", "hotmail.com", "yahoo.com", "outlook.com", "aol.com", "icloud.com", "mail.ru", "yandex.ru",
+                "protonmail.com", "zoho.com", "gmx.com", "mail.com", "bk.ru", "inbox.ru", "list.ru", "rambler.ru"
+            }
+
+            def extract_company_identifier(row):
+                email = row[email_col] if email_exists else None
+                website = row[websites_col] if websites_exists else None
+                # Use website domain if available
+                if pd.notna(website):
+                    return normalize_url(website)
+                # Use email domain only if not a free domain
+                if pd.notna(email) and '@' in email:
+                    domain = email.split('@')[-1].lower()
+                    if domain not in free_email_domains:
+                        return domain
+                return None
+
+            # Create a new column for company grouping
+            filtered_df[company_identifier_col] = filtered_df.apply(extract_company_identifier, axis=1)
+
+            # Drop rows where the company identifier is missing
+            filtered_df = filtered_df.dropna(subset=[company_identifier_col])
+
+            # Group by the company identifier
+            company_group = filtered_df.groupby(company_identifier_col, as_index=False)
+
+            def consolidate_column(series):
+                unique_values = series.dropna().unique()
+                return '; '.join(unique_values)
+
+            # Consolidate emails, phone numbers, and websites
+            if email_exists:
+                filtered_df[email_col] = company_group[email_col].transform(consolidate_column)
+            if t['column_phone'] in filtered_df.columns:
+                filtered_df[t['column_phone']] = company_group[t['column_phone']].transform(consolidate_column)
+            if websites_exists:
+                filtered_df[websites_col] = company_group[websites_col].transform(consolidate_column)
+
+            # Drop duplicate rows after consolidation
+            filtered_df = filtered_df.drop_duplicates(subset=[company_identifier_col])
+
+            # Drop the temporary 'Company Identifier' column
+            filtered_df.drop(columns=[company_identifier_col], inplace=True)
+        else:
+            st.warning("⚠️ Neither email nor website columns are available for consolidation.")
+
 
     # Display filtered preview
     if filtered_df.empty:
@@ -466,21 +556,15 @@ if uploaded:
         st.subheader(t['filtered_preview'])
         st.dataframe(filtered_df)
     
-    # Add Main Category and Subcategory columns to the filtered preview based on column 13
-    if len(filtered_df.columns) > 13:
-        industry_column = filtered_df.columns[13]  # Column at index 13
-
-        def map_to_main_and_subcategory(value):
-            for main_category, subcategories in industry_mapping.items():
-                if value in subcategories.keys():  # Check against the keys of subcategories
-                    return main_category, value
-            return "Other", value
-
-        # Apply the mapping to create new columns
-        filtered_df[[t['column_main_category'], t['column_subcategory']]] = filtered_df[industry_column].apply(
-            lambda x: pd.Series(map_to_main_and_subcategory(x))
+    # Translate main categories and subcategories in filtered_df for preview (after all filtering and mapping)
+    if t['column_main_category'] in filtered_df.columns:
+        filtered_df[t['column_main_category']] = filtered_df[t['column_main_category']].apply(
+            lambda x: t['categories'].get(str(x).strip(), x) if pd.notna(x) else x
         )
-    
+    if t['column_subcategory'] in filtered_df.columns:
+        filtered_df[t['column_subcategory']] = filtered_df[t['column_subcategory']].apply(
+            lambda x: t['subcategories'].get(str(x).strip(), x) if pd.notna(x) else x
+        )
     # Download filtered file
     buf = BytesIO()
     filtered_df.to_excel(buf, index=False, engine='openpyxl')
@@ -488,6 +572,58 @@ if uploaded:
     st.download_button(t['download_file'], buf,
                        'filtered_processed.xlsx',
                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    # --- Add to Database without Dialog Confirmation ---
+    def upload_to_postgres(df, table_name="filtered_data"):
+        # Connect to PostgreSQL using environment variables
+        dotenv_path = join(dirname(__file__), "Creds.env")
+        load_dotenv(dotenv_path)
+        conn = psycopg2.connect(
+            host=os.getenv("PG_HOST"),
+            port=int(os.getenv("PG_PORT")),
+            database=os.getenv("PG_DATABASE"),
+            user=os.getenv("PG_USER"),
+            password=os.getenv("PG_PASSWORD")
+        )
+        cur = conn.cursor()
+
+        # Create table if not exists (all columns as text for simplicity)
+        columns = [sql.Identifier(col) for col in df.columns]
+        col_defs = [sql.SQL("{} TEXT").format(col) for col in columns]
+        create_table = sql.SQL("CREATE TABLE IF NOT EXISTS {} ({});").format(
+            sql.Identifier(table_name),
+            sql.SQL(', ').join(col_defs)
+        )
+        cur.execute(create_table)
+
+        # Insert data (append)
+        for _, row in df.iterrows():
+            insert = sql.SQL("INSERT INTO {} ({}) VALUES ({});").format(
+                sql.Identifier(table_name),
+                sql.SQL(', ').join(columns),
+                sql.SQL(', ').join(sql.Placeholder() * len(columns))
+            )
+            cur.execute(insert, [str(x) if x is not None else None for x in row])
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    @st.dialog(t['confirm_upload_title'])
+    def confirm_upload():
+        st.write(t['confirm_upload_message'])
+        col1, col2 = st.columns(2)
+        if col1.button(t['yes_upload'], key="upload_db_confirm_dialog"):
+            try:
+                upload_to_postgres(filtered_df)
+                st.success(t['upload_success'])
+            except Exception as e:
+                st.error(t['upload_failed'].format(e=e))
+        if col2.button(t['no_cancel'], key="upload_db_cancel_dialog"):
+            st.info(t['upload_cancelled'])
+            st.rerun()
+
+    if st.button(t["add_to_database"]):
+        confirm_upload()
 
     # Count rows per country
     show_country_counts = st.toggle(t['rows_per_country'], value=False)
@@ -505,4 +641,21 @@ if uploaded:
         st.subheader(t['rows_per_category'])
         st.dataframe(initial_category_counts)
 
+        # Download button for category counts
+        cat_buf = BytesIO()
+        initial_category_counts.to_excel(cat_buf, index=False, engine='openpyxl')
+        cat_buf.seek(0)
+        st.download_button(
+            label="Download Category Counts",
+            data=cat_buf,
+            file_name="category_counts.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    
+
+    # After all renaming steps, drop duplicate columns and warn if any were found
+    duplicate_cols = filtered_df.columns[filtered_df.columns.duplicated(keep=False)]
+    if len(duplicate_cols) > 0:
+        st.error(f"Duplicate column names found in preview after renaming: {list(duplicate_cols)}. Only the first occurrence will be kept.")
+        filtered_df = filtered_df.loc[:, ~filtered_df.columns.duplicated(keep='first')]
 
